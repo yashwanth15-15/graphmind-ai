@@ -61,6 +61,71 @@ async def upload_document(file: UploadFile = File(...)):
     return {
         "filename": file.filename,
         "document_type": file_ext,
-        "total_pages": len(extracted_data),
         "pages": extracted_data
+    }
+
+from backend.app.services.chunking import DocumentChunker
+
+@router.post("/chunks")
+async def extract_and_chunk_document(file: UploadFile = File(...), chunk_size: int = 1000, chunk_overlap: int = 150):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    file_ext = file.filename.split(".")[-1].lower()
+    content = await file.read()
+    
+    extracted_data = []
+    
+    try:
+        if file_ext == "txt":
+            text = content.decode("utf-8", errors="ignore")
+            extracted_data.append({
+                "page_number": 1,
+                "text": text,
+                "metadata": {"type": "txt"}
+            })
+            
+        elif file_ext == "pdf":
+            pdf_file = io.BytesIO(content)
+            reader = pypdf.PdfReader(pdf_file)
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text:
+                    extracted_data.append({
+                        "page_number": i + 1,
+                        "text": text,
+                        "metadata": {"type": "pdf_page"}
+                    })
+                    
+        elif file_ext == "pptx":
+            pptx_file = io.BytesIO(content)
+            presentation = Presentation(pptx_file)
+            for i, slide in enumerate(presentation.slides):
+                text_runs = []
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        text_runs.append(shape.text)
+                text = "\n".join(text_runs)
+                if text.strip():
+                    extracted_data.append({
+                        "page_number": i + 1,
+                        "text": text,
+                        "metadata": {"type": "pptx_slide"}
+                    })
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+        
+    chunker = DocumentChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = chunker.chunk_document(file.filename, file_ext, extracted_data)
+    
+    # Return a summary and the chunks. We can limit the chunks returned if they're too large,
+    # but for in-memory milestone, we return all or at least a structure containing them.
+    return {
+        "filename": file.filename,
+        "total_extracted_sections": len(extracted_data),
+        "total_chunks": len(chunks),
+        "chunks": chunks
     }
