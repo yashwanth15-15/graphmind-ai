@@ -15,5 +15,6 @@ An enterprise-grade Agentic GraphRAG Knowledge Platform built from scratch.
 
 1. Copy `.env.example` to `.env`
 2. Start the database containers: `docker-compose up -d`
-3. Start the backend: `cd backend && pip install -r requirements.txt && uvicorn main:app --reload`
-4. Start the frontend: `cd frontend && npm install && npm run dev`
+3. Make sure you have [Ollama](https://ollama.com/) installed and running locally (`localhost:11434`), and that you have pulled your preferred model (e.g., `ollama run llama3`).
+4. Start the backend: `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload`
+5. Start the frontend: `cd frontend && npm install && npm run dev`
