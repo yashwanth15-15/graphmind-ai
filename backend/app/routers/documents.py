@@ -198,3 +198,54 @@ async def extract_chunk_and_embed_document(file: UploadFile = File(...), chunk_s
         "embedding_dimension": embedding_service.embedding_dimension,
         "preview": embedded_chunks[:2] if embedded_chunks else []
     }
+
+from backend.app.services.vector_store import QdrantService
+qdrant_service = QdrantService()
+
+@router.post("/index")
+async def index_document(file: UploadFile = File(...), chunk_size: int = 1000, chunk_overlap: int = 150):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    file_ext = file.filename.split(".")[-1].lower()
+    content = await file.read()
+    
+    extracted_data = []
+    
+    try:
+        if file_ext == "txt":
+            text = content.decode("utf-8", errors="ignore")
+            extracted_data.append({"page_number": 1, "text": text, "metadata": {"type": "txt"}})
+        elif file_ext == "pdf":
+            pdf_file = io.BytesIO(content)
+            reader = pypdf.PdfReader(pdf_file)
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text:
+                    extracted_data.append({"page_number": i + 1, "text": text, "metadata": {"type": "pdf_page"}})
+        elif file_ext == "pptx":
+            pptx_file = io.BytesIO(content)
+            presentation = Presentation(pptx_file)
+            for i, slide in enumerate(presentation.slides):
+                text_runs = [shape.text for shape in slide.shapes if hasattr(shape, "text")]
+                text = "\n".join(text_runs)
+                if text.strip():
+                    extracted_data.append({"page_number": i + 1, "text": text, "metadata": {"type": "pptx_slide"}})
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+        
+    chunker = DocumentChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = chunker.chunk_document(file.filename, file_ext, extracted_data)
+    
+    embedded_chunks = embedding_service.embed_chunks(chunks)
+    vectors_stored = qdrant_service.upsert_chunks(embedded_chunks)
+    
+    return {
+        "filename": file.filename,
+        "number_of_chunks": len(embedded_chunks),
+        "number_of_vectors_stored": vectors_stored,
+        "collection_name": qdrant_service.collection_name
+    }
+

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.routers import documents
+from backend.app.routers import documents, search
 
 app = FastAPI(
     title="GraphMind AI API",
@@ -26,3 +26,4 @@ def health_check():
     return {"status": "ok", "message": "GraphMind AI backend is running."}
 
 app.include_router(documents.router)
+app.include_router(search.router)
